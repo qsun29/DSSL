@@ -1,0 +1,11 @@
+epoch,avg_loss,use_disease_mask
+1,0.043629,True
+2,0.015156,True
+3,0.010207,True
+4,0.006142,True
+5,0.001898,True
+6,0.000499,True
+7,0.000221,True
+8,0.000122,True
+9,0.000074,True
+10,0.000047,True
