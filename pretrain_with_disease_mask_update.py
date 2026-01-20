@@ -3,7 +3,7 @@
 基于原始 WavLM 架构，在预训练阶段--use_disease_mask选择使用智能疾病帧掩码还是随机掩码
 
 随机掩码从头预训练
-python /home/sunqi/pd/wavlm-download/pretrain_with_disease_mask.py \
+python /home/sunqi/pd/wavlm-download/pretrain_with_disease_mask_update.py \
     --data_dir /home/sunqi/pd/NCMMSC2021_AD_intelligent_masked/AD_dataset_6s/traindata \
     --output_dir ./checkpoints_pretrain_random \
     --batch_size 2 \
@@ -14,7 +14,7 @@ python /home/sunqi/pd/wavlm-download/pretrain_with_disease_mask.py \
     --gpu_id 0
 
 疾病帧掩码从头预训练
-python /home/sunqi/pd/wavlm-download/pretrain_with_disease_mask.py \
+python /home/sunqi/pd/wavlm-download/pretrain_with_disease_mask_update.py \
     --data_dir /home/sunqi/pd/NCMMSC2021_AD_intelligent_masked/AD_dataset_6s/traindata \
     --output_dir ./checkpoints_pretrain_disease \
     --batch_size 2 \
@@ -33,6 +33,8 @@ from torch.utils.data import DataLoader, Dataset
 import numpy as np
 from pathlib import Path
 import soundfile as sf
+import tarfile
+import io
 import sys
 import csv
 import json
@@ -66,6 +68,60 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+try:
+    import torchaudio  # optional, used for resampling when available
+    _HAS_TORCHAUDIO = True
+except Exception:
+    torchaudio = None
+    _HAS_TORCHAUDIO = False
+
+class GumbelVectorQuantizer(nn.Module):
+    """
+    WavLM-style Gumbel Softmax codebook
+    """
+    def __init__(
+        self,
+        dim,
+        num_vars=320,
+        temp=2.0,
+        temp_min=0.5,
+        temp_decay=0.999995,
+    ):
+        super().__init__()
+        self.num_vars = num_vars
+        self.dim = dim
+        self.weight_proj = nn.Linear(dim, num_vars)
+        self.register_buffer("temp", torch.tensor(temp))
+        self.temp_min = temp_min
+        self.temp_decay = temp_decay
+
+    def forward(self, x, hard=True, sample_gumbel=True):
+        """
+        x: [B, T, D]
+        return:
+            codes: [B, T]
+        """
+        logits = self.weight_proj(x)  # [B, T, V]
+        # 作为“hard label”监督信号时，target_codes 必须尽量稳定；
+        # 否则（尤其是 gumbel 采样 + dropout）会导致 targets 每步随机抖动，loss 长期卡在 ~log(V) 附近。
+        if sample_gumbel:
+            gumbels = F.gumbel_softmax(
+                logits,
+                tau=self.temp.item(),
+                hard=hard,
+                dim=-1
+            )
+            codes = gumbels.argmax(dim=-1)
+        else:
+            # deterministic assignment (no gumbel noise)
+            codes = logits.argmax(dim=-1)
+        return codes
+
+    def step(self):
+        self.temp = torch.maximum(
+            self.temp * self.temp_decay,
+            torch.tensor(self.temp_min, device=self.temp.device)
+        )
 
 class PretrainDataset(Dataset):
     """预训练数据集（无标签，用于自监督学习）
@@ -76,6 +132,9 @@ class PretrainDataset(Dataset):
     
     会在给定目录下递归收集所有 `*.wav` / `*.flac` 音频文件，
     因此可以直接用于多语种 ASR/情感/AD 等多数据集联合预训练。
+    
+    额外支持：如果目录下是 `.tar/.tar.gz/.tgz/...` 打包的数据，会枚举 tar 内的
+    `*.wav/*.flac` 成员，并在 `__getitem__` 时按需解包读取（无需提前全量解压）。
     """
     def __init__(self, data_dir, sample_rate=16000, max_duration_s=6.0, device=None):
         self.sample_rate = sample_rate
@@ -94,31 +153,91 @@ class PretrainDataset(Dataset):
         self.data_dirs = data_dirs
 
         # 收集所有音频文件（不再强制要求 HC/AD/MCI 目录结构）
-        self.audio_files = []
+        # item formats:
+        # - ("fs", "/abs/path/to/audio.wav")
+        # - ("tar", "/abs/path/to/archive.tar(.gz...)", "member/inside/archive.wav")
+        self.audio_items = []
+        audio_exts = (".wav", ".flac")
+        tar_patterns = ("*.tar", "*.tar.gz", "*.tgz", "*.tar.bz2", "*.tbz2", "*.tar.xz", "*.txz")
         for root in self.data_dirs:
             if not root.exists():
                 logger.warning(f"Data directory does not exist and will be skipped: {root}")
                 continue
 
-            count_before = len(self.audio_files)
+            count_before = len(self.audio_items)
+
+            # 1) normal files on filesystem
             for pattern in ("*.wav", "*.flac"):
                 for audio_path in root.rglob(pattern):
-                    self.audio_files.append(str(audio_path))
-            count_after = len(self.audio_files)
-            logger.info(f"Collected {count_after - count_before} audio files from: {root}")
+                    self.audio_items.append(("fs", str(audio_path)))
+
+            # 2) tar archives (enumerate members)
+            tar_paths = []
+            for pat in tar_patterns:
+                tar_paths.extend(root.rglob(pat))
+
+            tar_audio_count = 0
+            for tar_path in tar_paths:
+                try:
+                    with tarfile.open(str(tar_path), mode="r:*") as tf:
+                        for m in tf.getmembers():
+                            if not m.isfile():
+                                continue
+                            name = m.name
+                            if name.lower().endswith(audio_exts):
+                                self.audio_items.append(("tar", str(tar_path), name))
+                                tar_audio_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to read tar archive {tar_path}: {e}")
+
+            count_after = len(self.audio_items)
+            if tar_paths:
+                logger.info(
+                    f"Collected {count_after - count_before} audio files from: {root} "
+                    f"(including {tar_audio_count} from {len(tar_paths)} tar archives)"
+                )
+            else:
+                logger.info(f"Collected {count_after - count_before} audio files from: {root}")
         
-        logger.info(f"Found {len(self.audio_files)} audio files for pretraining in total")
+        logger.info(f"Found {len(self.audio_items)} audio files for pretraining in total")
     
     def __len__(self):
-        return len(self.audio_files)
+        return len(self.audio_items)
     
     def __getitem__(self, idx):
-        audio_path = self.audio_files[idx]
+        item = self.audio_items[idx]
         
         try:
-            waveform, sr = sf.read(audio_path)
+            if item[0] == "fs":
+                audio_path = item[1]
+                waveform, sr = sf.read(audio_path)
+            elif item[0] == "tar":
+                tar_path, member_name = item[1], item[2]
+                with tarfile.open(tar_path, mode="r:*") as tf:
+                    fobj = tf.extractfile(member_name)
+                    if fobj is None:
+                        raise FileNotFoundError(f"Missing member in tar: {member_name}")
+                    data = fobj.read()
+                waveform, sr = sf.read(io.BytesIO(data))
+            else:
+                raise ValueError(f"Unknown item type: {item[0]}")
+
             if waveform.ndim > 1:
                 waveform = waveform.mean(axis=1)
+
+            # 重采样到目标采样率（如果需要）
+            if sr != self.sample_rate:
+                if _HAS_TORCHAUDIO:
+                    w = torch.from_numpy(waveform).float().unsqueeze(0)
+                    w = torchaudio.functional.resample(w, sr, self.sample_rate)
+                    waveform = w.squeeze(0).cpu().numpy()
+                else:
+                    # fallback: naive linear interpolation resampling (better than mismatch)
+                    ratio = float(self.sample_rate) / float(sr)
+                    new_len = max(1, int(round(len(waveform) * ratio)))
+                    xp = np.linspace(0.0, 1.0, num=len(waveform), endpoint=False)
+                    x = np.linspace(0.0, 1.0, num=new_len, endpoint=False)
+                    waveform = np.interp(x, xp, waveform).astype(waveform.dtype, copy=False)
             
             # 裁剪或填充到固定长度
             if len(waveform) > self.max_length:
@@ -137,7 +256,8 @@ class PretrainDataset(Dataset):
             
             return tensor
         except Exception as e:
-            logger.warning(f"Error loading {audio_path}: {e}")
+            # item can be fs path or tar member
+            logger.warning(f"Error loading {item}: {e}")
             error_tensor = torch.zeros(self.max_length)
             if self.device is not None:
                 error_tensor = error_tensor.to(self.device, non_blocking=True)
@@ -166,6 +286,12 @@ def pretrain_with_disease_mask(
         use_disease_mask: 是否使用疾病帧掩码（True=疾病帧掩码，False=随机掩码）
         pathology_threshold: 病理特征检测阈值（百分位数）
     """
+    
+    @torch.no_grad()
+    def update_ema(student, teacher, ema_decay=0.999):
+        for param_s, param_t in zip(student.parameters(), teacher.parameters()):
+            param_t.data.mul_(ema_decay).add_(param_s.data, alpha=1.0 - ema_decay)
+    
     # 设置 GPU 设备
     if device == "cuda" and torch.cuda.is_available():
         if gpu_id >= torch.cuda.device_count():
@@ -226,8 +352,38 @@ def pretrain_with_disease_mask(
     cfg = WavLMConfig()
     cfg.mask_prob = 0.65
     cfg.mask_length = 10
-    model = WavLM(cfg)
-    model = model.to(device)
+    # model = WavLM(cfg)
+    # model = model.to(device)
+    # Student model
+    student_model = WavLM(cfg).to(device)
+
+    # Teacher model (EMA)
+    teacher_model = WavLM(cfg).to(device)
+
+    # 初始化 teacher 参数 = student 参数
+    teacher_model.load_state_dict(student_model.state_dict())
+
+    # Teacher 永远不反传梯度
+    for p in teacher_model.parameters():
+        p.requires_grad = False
+
+    # 关键：teacher 用 eval() 关掉 dropout，保证 targets 稳定；student/head 用 train()
+    student_model.train()
+    prediction_head.train()
+    teacher_model.eval()
+    
+    model = student_model
+    
+    feature_dim = cfg.encoder_embed_dim
+
+    # Gumbel codebook (teacher only)
+    quantizer = GumbelVectorQuantizer(
+        dim=feature_dim,
+        num_vars=320
+    ).to(device)
+
+    # Prediction head (student only)
+    prediction_head = nn.Linear(feature_dim, 320).to(device)
     
     # 3. 创建病理特征检测器（如果使用疾病帧掩码）
     detector = None
@@ -242,9 +398,15 @@ def pretrain_with_disease_mask(
         logger.info("Using random masking (traditional WavLM)")
     
     # 4. 优化器和损失函数
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(
+        # model.parameters(),
+        list(student_model.parameters()) + list(prediction_head.parameters()), 
+        lr=learning_rate, 
+        weight_decay=0.01
+    )
     
     # 预训练损失：掩码预测损失（MSE）
+    '''
     def compute_loss(model_outputs, target_features, mask_indices):
         """计算掩码预测损失"""
         predictions = model_outputs['x']  # [B, T, D]
@@ -261,6 +423,25 @@ def pretrain_with_disease_mask(
         loss_per_position = loss.mean(dim=-1)  # [B, T]
         loss = (loss_per_position * mask_indices.float()).sum() / (num_masked + 1e-8)
         
+        return loss
+    '''
+    def compute_loss(student_features, target_codes, mask_indices):
+        """
+        student_features: [B, T, D]
+        target_codes: [B, T]
+        mask_indices: [B, T]
+        """
+        logits = prediction_head(student_features)  # [B, T, V]
+
+        B, T, V = logits.shape
+        logits = logits.view(B * T, V)
+        target_codes = target_codes.view(B * T)
+        mask_indices = mask_indices.view(B * T)
+
+        loss = F.cross_entropy(
+            logits[mask_indices],
+            target_codes[mask_indices]
+        )
         return loss
     
     # 5. 训练循环
@@ -344,25 +525,48 @@ def pretrain_with_disease_mask(
                 )
             
             # 获取目标特征（未掩码）
+            '''
             with torch.no_grad():
-                target_features, _ = model.extract_features(
+                target_features, _ = teacher_model.extract_features(
                     source=waveforms,
                     mask=False
                 )
                 if device.type == "cuda" and not target_features.is_cuda:
                     target_features = target_features.to(device)
+            '''
+            
+            with torch.no_grad():
+                teacher_features, _ = teacher_model.extract_features(
+                    source=waveforms,
+                    mask=False
+                )
+                # 生成监督 codes 时禁用 gumbel 采样噪声，避免 targets 随机抖动
+                target_codes = quantizer(teacher_features, sample_gumbel=False)  # [B, T]
+
+            # 量化器崩溃监控：如果 unique_codes 只有个位数，说明 codes 塌缩
+            if batch_idx % 100 == 0:
+                unique_codes = torch.unique(target_codes).numel()
+                logger.info(f"Unique codes in this batch: {unique_codes}")
+                if unique_codes < 10:
+                    msg = (
+                        f"Quantizer collapse detected (stop training): "
+                        f"unique_codes={unique_codes} (epoch={epoch}, batch_idx={batch_idx})"
+                    )
+                    logger.error(msg)
+                    raise RuntimeError(msg)
             
             # 确保所有张量在同一设备上
             features = features.to(device)
-            target_features = target_features.to(device)
+            # target_features = target_features.to(device)
+            target_codes = target_codes.to(device)
             mask_indices = mask_indices.to(device)
             
             # 计算损失
             if scaler:
                 with torch.amp.autocast("cuda"):
-                    loss = compute_loss({'x': features}, target_features, mask_indices)
+                    loss = compute_loss(features, target_codes, mask_indices)
             else:
-                loss = compute_loss({'x': features}, target_features, mask_indices)
+                loss = compute_loss(features, target_codes, mask_indices)
             
             # 反向传播
             optimizer.zero_grad()
@@ -372,10 +576,14 @@ def pretrain_with_disease_mask(
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
+                update_ema(model, teacher_model)
+                quantizer.step()
             else:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
+                update_ema(model, teacher_model)
+                quantizer.step()
             
             total_loss += loss.item()
             num_batches += 1
@@ -543,4 +751,3 @@ if __name__ == "__main__":
         device=args.device,
         gpu_id=args.gpu_id
     )
-
