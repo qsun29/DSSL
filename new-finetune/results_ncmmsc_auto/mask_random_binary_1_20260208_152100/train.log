@@ -1,0 +1,52 @@
+Data root: /mnt/lv2/data/ad/NCMMSC2021_AD
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_ncmmsc_auto/mask_random_binary_1_20260208_152100
+Mask strategy: random
+Collected 187 samples from NCMMSC long/train
+Split by subject: train=157 samples, val=30 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+LR schedule: cosine (total_steps=800, warmup=80)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6879, acc=0.4841
+VALIDATION | acc=0.5667
+New best val_acc=0.5667 at epoch 1, saved to /home/sunqi/pd/new/results_ncmmsc_auto/mask_random_binary_1_20260208_152100/best_model.pt
+Epoch 2 TRAIN | loss=0.6418, acc=0.6752
+VALIDATION | acc=0.2000
+Epoch 3 TRAIN | loss=0.4906, acc=0.8089
+VALIDATION | acc=0.1667
+Epoch 4 TRAIN | loss=0.4484, acc=0.8535
+VALIDATION | acc=0.1667
+Epoch 5 TRAIN | loss=0.5097, acc=0.7771
+VALIDATION | acc=0.2000
+Epoch 6 TRAIN | loss=0.4341, acc=0.8408
+VALIDATION | acc=0.1667
+Epoch 7 TRAIN | loss=0.3687, acc=0.8726
+VALIDATION | acc=0.1333
+Epoch 8 TRAIN | loss=0.3200, acc=0.9108
+VALIDATION | acc=0.2000
+Epoch 9 TRAIN | loss=0.2700, acc=0.9299
+VALIDATION | acc=0.2000
+Epoch 10 TRAIN | loss=0.4081, acc=0.8917
+VALIDATION | acc=0.2333
+Epoch 11 TRAIN | loss=0.4223, acc=0.8599
+VALIDATION | acc=0.1667
+Epoch 12 TRAIN | loss=0.1953, acc=0.9554
+VALIDATION | acc=0.2000
+Epoch 13 TRAIN | loss=0.2002, acc=0.9554
+VALIDATION | acc=0.2333
+Epoch 14 TRAIN | loss=0.2219, acc=0.9490
+VALIDATION | acc=0.2000
+Epoch 15 TRAIN | loss=0.1869, acc=0.9618
+VALIDATION | acc=0.2333
+Epoch 16 TRAIN | loss=0.1806, acc=0.9554
+VALIDATION | acc=0.2000
+Epoch 17 TRAIN | loss=0.1999, acc=0.9554
+VALIDATION | acc=0.2333
+Epoch 18 TRAIN | loss=0.1728, acc=0.9618
+VALIDATION | acc=0.2333
+Epoch 19 TRAIN | loss=0.1559, acc=0.9682
+VALIDATION | acc=0.2333
+Epoch 20 TRAIN | loss=0.1594, acc=0.9618
+VALIDATION | acc=0.2333
+Done. Best val_acc=0.5667
+Results saved under /home/sunqi/pd/new/results_ncmmsc_auto/mask_random_binary_1_20260208_152100

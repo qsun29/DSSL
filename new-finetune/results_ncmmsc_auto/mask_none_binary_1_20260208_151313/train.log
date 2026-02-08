@@ -1,0 +1,53 @@
+Data root: /mnt/lv2/data/ad/NCMMSC2021_AD
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_ncmmsc_auto/mask_none_binary_1_20260208_151313
+Mask strategy: none
+Collected 187 samples from NCMMSC long/train
+Split by subject: train=157 samples, val=30 samples
+LR schedule: cosine (total_steps=800, warmup=80)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6865, acc=0.5159
+VALIDATION | acc=0.8333
+New best val_acc=0.8333 at epoch 1, saved to /home/sunqi/pd/new/results_ncmmsc_auto/mask_none_binary_1_20260208_151313/best_model.pt
+Epoch 2 TRAIN | loss=0.5672, acc=0.8217
+VALIDATION | acc=0.7000
+Epoch 3 TRAIN | loss=0.3715, acc=0.8854
+VALIDATION | acc=0.9000
+New best val_acc=0.9000 at epoch 3, saved to /home/sunqi/pd/new/results_ncmmsc_auto/mask_none_binary_1_20260208_151313/best_model.pt
+Epoch 4 TRAIN | loss=0.2853, acc=0.9045
+VALIDATION | acc=0.8000
+Epoch 5 TRAIN | loss=0.1701, acc=0.9554
+VALIDATION | acc=0.9000
+Epoch 6 TRAIN | loss=0.1127, acc=0.9745
+VALIDATION | acc=0.9000
+Epoch 7 TRAIN | loss=0.0802, acc=0.9809
+VALIDATION | acc=0.9333
+New best val_acc=0.9333 at epoch 7, saved to /home/sunqi/pd/new/results_ncmmsc_auto/mask_none_binary_1_20260208_151313/best_model.pt
+Epoch 8 TRAIN | loss=0.0453, acc=0.9936
+VALIDATION | acc=0.9000
+Epoch 9 TRAIN | loss=0.0397, acc=0.9936
+VALIDATION | acc=0.9000
+Epoch 10 TRAIN | loss=0.0650, acc=0.9873
+VALIDATION | acc=0.9333
+Epoch 11 TRAIN | loss=0.0057, acc=1.0000
+VALIDATION | acc=0.8667
+Epoch 12 TRAIN | loss=0.0068, acc=1.0000
+VALIDATION | acc=0.9333
+Epoch 13 TRAIN | loss=0.0053, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 14 TRAIN | loss=0.0043, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 15 TRAIN | loss=0.0097, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 16 TRAIN | loss=0.0037, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 17 TRAIN | loss=0.0090, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 18 TRAIN | loss=0.0413, acc=0.9936
+VALIDATION | acc=0.9000
+Epoch 19 TRAIN | loss=0.0035, acc=1.0000
+VALIDATION | acc=0.9000
+Epoch 20 TRAIN | loss=0.0025, acc=1.0000
+VALIDATION | acc=0.9000
+Done. Best val_acc=0.9333
+Results saved under /home/sunqi/pd/new/results_ncmmsc_auto/mask_none_binary_1_20260208_151313

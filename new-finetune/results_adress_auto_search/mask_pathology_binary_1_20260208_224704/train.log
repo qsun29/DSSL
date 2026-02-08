@@ -1,0 +1,56 @@
+Data root: /mnt/lv2/data/ad/ADReSS
+Model: /home/sunqi/models/wavlm-base
+Output dir: new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704
+Mask strategy: pathology
+Collected 108 samples from ADReSS train (cc=True, cd=True)
+Split by subject: train=86 samples, val=22 samples
+Using pathology weights from new/results_pathology_weight_search_adress/best_logits.pt
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+LR schedule: cosine (total_steps=440, warmup=44)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6975, acc=0.4302
+VALIDATION | acc=0.5000
+New best val_acc=0.5000 at epoch 1, saved to new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704/best_model.pt
+Epoch 2 TRAIN | loss=0.6911, acc=0.6279
+VALIDATION | acc=0.4545
+Epoch 3 TRAIN | loss=0.6898, acc=0.5233
+VALIDATION | acc=0.5909
+New best val_acc=0.5909 at epoch 3, saved to new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704/best_model.pt
+Epoch 4 TRAIN | loss=0.6713, acc=0.6395
+VALIDATION | acc=0.5000
+Epoch 5 TRAIN | loss=0.6853, acc=0.4651
+VALIDATION | acc=0.5000
+Epoch 6 TRAIN | loss=0.6664, acc=0.6395
+VALIDATION | acc=0.5000
+Epoch 7 TRAIN | loss=0.6571, acc=0.6279
+VALIDATION | acc=0.6818
+New best val_acc=0.6818 at epoch 7, saved to new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704/best_model.pt
+Epoch 8 TRAIN | loss=0.6426, acc=0.6279
+VALIDATION | acc=0.6364
+Epoch 9 TRAIN | loss=0.5868, acc=0.7209
+VALIDATION | acc=0.6364
+Epoch 10 TRAIN | loss=0.5836, acc=0.7558
+VALIDATION | acc=0.6364
+Epoch 11 TRAIN | loss=0.5169, acc=0.7791
+VALIDATION | acc=0.8182
+New best val_acc=0.8182 at epoch 11, saved to new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704/best_model.pt
+Epoch 12 TRAIN | loss=0.4957, acc=0.7442
+VALIDATION | acc=0.6364
+Epoch 13 TRAIN | loss=0.3971, acc=0.8605
+VALIDATION | acc=0.5909
+Epoch 14 TRAIN | loss=0.4023, acc=0.8837
+VALIDATION | acc=0.5909
+Epoch 15 TRAIN | loss=0.3573, acc=0.8605
+VALIDATION | acc=0.5909
+Epoch 16 TRAIN | loss=0.4402, acc=0.8256
+VALIDATION | acc=0.6364
+Epoch 17 TRAIN | loss=0.4816, acc=0.8023
+VALIDATION | acc=0.5909
+Epoch 18 TRAIN | loss=0.2808, acc=0.9186
+VALIDATION | acc=0.6364
+Epoch 19 TRAIN | loss=0.3481, acc=0.8605
+VALIDATION | acc=0.6364
+Epoch 20 TRAIN | loss=0.3302, acc=0.8953
+VALIDATION | acc=0.6364
+Done. Best val_acc=0.8182
+Results saved under new/results_adress_auto_search/mask_pathology_binary_1_20260208_224704
