@@ -1,18 +1,33 @@
 """
 完全GPU加速的病理特征检测器
 使用torchaudio替代librosa，所有操作在GPU上执行
+权重为可学习参数，通过 softmax 归一化实现自适应组合
 """
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
 import torchaudio.transforms as T
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from scipy import signal
 from scipy.stats import entropy
 
+# 特征顺序，与可学习权重一一对应
+FEATURE_NAMES = [
+    'rhythm_irregularity',
+    'pause_likelihood',
+    'pitch_monotony',
+    'energy_drop',
+    'voice_quality_anomaly',
+    'voice_quality_periodicity',
+]
 
-class GPUPathologyFeatureDetector:
+# 原手工权重，用于初始化 logits，使「未训练时」= 原版表现；训练时可在此基础上微调
+PRIOR_WEIGHTS = [0.2, 0.2, 0.2, 0.15, 0.15, 0.1]
+
+
+class GPUPathologyFeatureDetector(nn.Module):
     """
     GPU加速的病理特征检测器
     使用torchaudio在GPU上提取所有特征，替代librosa
@@ -24,14 +39,37 @@ class GPUPathologyFeatureDetector:
         frame_length: int = 512,
         hop_length: int = 256,
         threshold_percentile: float = 75.0,
-        device: str = 'cuda'
+        device: str = 'cuda',
+        weight_temperature: float = 1.0,
+        init_weight_logits: Optional[torch.Tensor] = None,
+        use_mlp_head: bool = False,
     ):
+        super().__init__()
         self.sample_rate = sample_rate
         self.frame_length = frame_length
         self.hop_length = hop_length
         self.threshold_percentile = threshold_percentile
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
-        
+        self.weight_temperature = weight_temperature  # softmax 温度，>1 更平滑
+        self.use_mlp_head = use_mlp_head
+        # 可学习权重 logits：可传入自定义 logits，或用原手工权重的 log 初始化
+        if init_weight_logits is not None:
+            self.weight_logits = nn.Parameter(
+                init_weight_logits.clone().detach().float()
+            )
+        else:
+            prior = torch.tensor(PRIOR_WEIGHTS, dtype=torch.float32)
+            self.weight_logits = nn.Parameter(torch.log(prior.clamp(min=1e-8)))
+        # 可选：小型 MLP 头做非线性组合（前沿），替代线性加权
+        if use_mlp_head:
+            self.mlp_head = nn.Sequential(
+                nn.Linear(len(FEATURE_NAMES), 32),
+                nn.GELU(),
+                nn.Linear(32, 1),
+            )
+        else:
+            self.mlp_head = None
+
         # GPU上的音频处理变换
         self.mel_transform = T.MelSpectrogram(
             sample_rate=sample_rate,
@@ -80,10 +118,11 @@ class GPUPathologyFeatureDetector:
         # 在GPU上提取病理特征
         features = self._extract_pathology_features_gpu(waveform_tensor)
         
-        # 基于特征生成病理掩码
-        pathology_mask = self._generate_pathology_mask(features, n_frames)
-        
+        # 基于特征生成病理掩码（使用可学习权重）
+        pathology_mask, pathology_score = self._generate_pathology_mask(features, n_frames)
+
         if return_features:
+            features['pathology_score_tensor'] = pathology_score  # 可用于反向传播与损失计算
             return pathology_mask, features
         return pathology_mask
     
@@ -243,27 +282,32 @@ class GPUPathologyFeatureDetector:
             else:
                 normalized_features[name] = np.zeros(n_frames)
         
-        # 组合特征（使用权重）
-        weights = {
-            'rhythm_irregularity': 0.2,
-            'pause_likelihood': 0.2,
-            'pitch_monotony': 0.2,
-            'energy_drop': 0.15,
-            'voice_quality_anomaly': 0.15,
-            'voice_quality_periodicity': 0.1,
-        }
-        
-        pathology_score = np.zeros(n_frames)
-        for name, weight in weights.items():
-            if name in normalized_features:
-                pathology_score += weight * normalized_features[name]
-        
+        # 组合特征：线性加权（softmax 权重）或 MLP 头（非线性）
+        features_tensor = torch.stack([
+            torch.from_numpy(normalized_features[name]).float().to(self.weight_logits.device)
+            for name in FEATURE_NAMES
+        ], dim=1)
+        if self.mlp_head is not None:
+            pathology_score = self.mlp_head(features_tensor).squeeze(-1)  # (n_frames,)
+        else:
+            weights = F.softmax(self.weight_logits / self.weight_temperature, dim=0)  # (6,)
+            pathology_score = (features_tensor * weights.unsqueeze(0)).sum(dim=1)  # (n_frames,)
+
         # 使用阈值生成掩码
-        threshold = np.percentile(pathology_score, self.threshold_percentile)
-        pathology_mask = pathology_score >= threshold
-        
-        return pathology_mask
-    
+        threshold = torch.quantile(
+            pathology_score.double(),
+            self.threshold_percentile / 100.0
+        )
+        pathology_mask = (pathology_score >= threshold).detach().cpu().numpy()
+
+        return pathology_mask, pathology_score
+
+    def get_weights(self) -> Dict[str, float]:
+        """返回当前学习到的归一化权重（softmax 后，和为 1）"""
+        with torch.no_grad():
+            w = F.softmax(self.weight_logits / self.weight_temperature, dim=0).cpu().numpy()
+        return dict(zip(FEATURE_NAMES, w.tolist()))
+
     def get_pathology_segments(
         self,
         waveform: np.ndarray,

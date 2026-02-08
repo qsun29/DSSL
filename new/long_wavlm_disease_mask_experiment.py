@@ -244,26 +244,48 @@ def train_one_epoch(
     device: torch.device,
     criterion: nn.Module,
     epoch: int,
+    *,
+    use_amp: bool = False,
+    scaler: "torch.amp.GradScaler | None" = None,
+    gradient_accumulation_steps: int = 1,
+    scheduler: "torch.optim.lr_scheduler.LRScheduler | None" = None,
 ) -> Tuple[float, float]:
     model.train()
     total_loss = 0.0
     total_correct = 0
     total_count = 0
+    step = 0
 
     for batch in dataloader:
-        input_values = batch["input_values"].to(device)
-        labels = batch["labels"].to(device)
+        input_values = batch["input_values"].to(device, non_blocking=True)
+        labels = batch["labels"].to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-        outputs = model(input_values=input_values)
-        logits = outputs.logits
-        loss = criterion(logits, labels)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            outputs = model(input_values=input_values)
+            logits = outputs.logits
+            loss = criterion(logits, labels) / gradient_accumulation_steps
 
-        total_loss += loss.item() * labels.size(0)
-        preds = logits.argmax(dim=-1)
+        if scaler is not None and use_amp:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+
+        step += 1
+        if step % gradient_accumulation_steps == 0:
+            if scaler is not None and use_amp:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            if scheduler is not None:
+                scheduler.step()
+
+        total_loss += loss.item() * gradient_accumulation_steps * labels.size(0)
+        preds = logits.detach().argmax(dim=-1)
         total_correct += (preds == labels).sum().item()
         total_count += labels.size(0)
 
@@ -279,6 +301,7 @@ def evaluate(
     model: WavLMForSequenceClassification,
     dataloader: DataLoader,
     device: torch.device,
+    use_amp: bool = False,
 ) -> float:
     model.eval()
     total_correct = 0
@@ -286,10 +309,11 @@ def evaluate(
 
     with torch.no_grad():
         for batch in dataloader:
-            input_values = batch["input_values"].to(device)
-            labels = batch["labels"].to(device)
-            outputs = model(input_values=input_values)
-            logits = outputs.logits
+            input_values = batch["input_values"].to(device, non_blocking=True)
+            labels = batch["labels"].to(device, non_blocking=True)
+            with torch.amp.autocast("cuda", enabled=use_amp):
+                outputs = model(input_values=input_values)
+                logits = outputs.logits
             preds = logits.argmax(dim=-1)
             total_correct += (preds == labels).sum().item()
             total_count += labels.size(0)
@@ -376,6 +400,56 @@ def main():
     parser.add_argument("--pathology_ratio", type=float, default=0.9, help="智能掩码中病理帧占比")
     parser.add_argument("--pathology_threshold", type=float, default=85.0, help="病理帧检测阈值（百分位）")
     parser.add_argument("--aug_prob", type=float, default=1.0, help="每条样本应用掩码的概率（0~1）")
+    parser.add_argument(
+        "--pathology_weight_logits",
+        type=str,
+        default=None,
+        help="搜索得到的最优权重 logits 文件路径（如 best_logits.pt），用于 init_weight_logits",
+    )
+    # 前沿训练选项：混合精度、编译、学习率调度
+    parser.add_argument(
+        "--use_amp",
+        action="store_true",
+        default=True,
+        help="使用自动混合精度 (AMP) 加速（默认开启，CUDA 时有效）",
+    )
+    parser.add_argument(
+        "--no_amp",
+        action="store_false",
+        dest="use_amp",
+        help="关闭 AMP",
+    )
+    parser.add_argument(
+        "--compile",
+        action="store_true",
+        default=False,
+        help="使用 torch.compile 编译模型（PyTorch 2.0+，可加速）",
+    )
+    parser.add_argument(
+        "--lr_schedule",
+        type=str,
+        default="cosine",
+        choices=["none", "cosine", "linear"],
+        help="学习率调度：cosine 带 warmup（推荐）",
+    )
+    parser.add_argument(
+        "--warmup_ratio",
+        type=float,
+        default=0.1,
+        help="warmup 占总步数比例（仅当 lr_schedule 非 none 时）",
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=1,
+        help="梯度累积步数，等效更大 batch",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="DataLoader 进程数（0=主进程加载）",
+    )
     args = parser.parse_args()
 
     data_root = Path(args.data_root)
@@ -421,10 +495,18 @@ def main():
     # 3) 构建疾病掩码器（如果需要）
     masker = None
     if args.mask_strategy in ("pathology", "random"):
+        init_logits = None
+        if getattr(args, "pathology_weight_logits", None):
+            p = Path(args.pathology_weight_logits)
+            if p.exists():
+                ckpt = torch.load(p, map_location="cpu", weights_only=True)
+                init_logits = ckpt.get("weight_logits", ckpt)
+                logger.info(f"Using pathology weights from {p}")
         detector = GPUPathologyFeatureDetector(
             sample_rate=16000,
             threshold_percentile=args.pathology_threshold,
             device=args.device,
+            init_weight_logits=init_logits,
         )
         random_ratio = max(0.0, 1.0 - args.pathology_ratio)
         masker = GPUAdaptivePathologyMasker(
@@ -461,13 +543,15 @@ def main():
         train_ds,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=args.num_workers,
+        pin_memory=(args.device == "cuda"),
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=args.num_workers,
+        pin_memory=(args.device == "cuda"),
     )
 
     # 5) 构建模型
@@ -480,7 +564,39 @@ def main():
     )
     model = model.to(device)
 
+    use_amp = args.use_amp and device.type == "cuda"
+    if getattr(torch, "compile", None) and args.compile:
+        model = torch.compile(model, mode="reduce-overhead")
+        logger.info("Model compiled with torch.compile(mode='reduce-overhead')")
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    steps_per_epoch = max(1, len(train_loader) // args.gradient_accumulation_steps)
+    num_training_steps = steps_per_epoch * args.num_epochs
+    warmup_steps = int(num_training_steps * args.warmup_ratio) if args.lr_schedule != "none" else 0
+    if args.lr_schedule == "cosine" and (warmup_steps > 0 or num_training_steps > 0):
+        from torch.optim.lr_scheduler import LinearLR, SequentialLR
+        cosine_t_max = max(1, num_training_steps - warmup_steps)
+        cosine_sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cosine_t_max, eta_min=args.lr * 0.01
+        )
+        if warmup_steps > 0:
+            warmup_sched = LinearLR(optimizer, start_factor=0.1, total_iters=warmup_steps)
+            scheduler = SequentialLR(optimizer, [warmup_sched, cosine_sched], milestones=[warmup_steps])
+        else:
+            scheduler = cosine_sched
+        logger.info(f"LR schedule: cosine (total_steps={num_training_steps}, warmup={warmup_steps})")
+    elif args.lr_schedule == "linear":
+        scheduler = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.1, end_factor=0.01, total_iters=num_training_steps
+        )
+        logger.info("LR schedule: linear")
+    else:
+        scheduler = None
+
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
+    if use_amp:
+        logger.info("Training with AMP (autocast + GradScaler)")
+
     criterion = nn.CrossEntropyLoss()
 
     best_val_acc = 0.0
@@ -491,9 +607,18 @@ def main():
 
     for epoch in range(1, args.num_epochs + 1):
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, device, criterion, epoch
+            model,
+            train_loader,
+            optimizer,
+            device,
+            criterion,
+            epoch,
+            use_amp=use_amp,
+            scaler=scaler,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            scheduler=scheduler,
         )
-        val_acc = evaluate(model, val_loader, device)
+        val_acc = evaluate(model, val_loader, device, use_amp=use_amp)
 
         with open(history_path, "a", newline="") as f:
             writer = csv.writer(f)
@@ -538,6 +663,12 @@ def main():
         "num_epochs": args.num_epochs,
         "lr": args.lr,
         "max_duration_s": args.max_duration_s,
+        "use_amp": use_amp,
+        "compile": args.compile,
+        "lr_schedule": args.lr_schedule,
+        "warmup_ratio": args.warmup_ratio,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "num_workers": args.num_workers,
         "best_val_acc": best_val_acc,
         "num_train": len(train_samples),
         "num_val": len(val_samples),
