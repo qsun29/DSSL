@@ -15,12 +15,11 @@ from scipy.stats import entropy
 
 # 特征顺序，与可学习权重一一对应
 FEATURE_NAMES = [
-    'rhythm_irregularity',
-    'pause_likelihood',
-    'pitch_monotony',
-    'energy_drop',
-    'voice_quality_anomaly',
-    'voice_quality_periodicity',
+    'low_speech_rate',
+    'low_articulation_rate',
+    'short_speech_segments',
+    'high_npvi_rhythm',
+    'voice_breaks',
 ]
 
 class GPUPathologyFeatureDetector(nn.Module):
@@ -122,134 +121,159 @@ class GPUPathologyFeatureDetector(nn.Module):
         return pathology_mask
     
     def _extract_pathology_features_gpu(self, waveform_tensor: torch.Tensor) -> Dict:
-        """在GPU上提取病理特征"""
+        """
+        在GPU上提取病理特征 (针对 AD vs HC 差异优化)
+        特征包括：
+        1. low_speech_rate: 语速显著下降
+        2. low_articulation_rate: 发音速率显著下降
+        3. short_speech_segments: 连续话段时长较短
+        4. high_npvi_rhythm: 节律变异 (nPVI) 增高
+        5. voice_breaks: 声带中断/断裂增多
+        """
         features = {}
         
         # 确保在GPU上
         if waveform_tensor.device != self.device:
             waveform_tensor = waveform_tensor.to(self.device)
         
-        # 1. 节奏特征（基于能量包络的变化率）- GPU
-        # 计算RMS能量（完全在GPU上）
+        # 基础特征提取
         frame_length = self.frame_length
         hop_length = self.hop_length
         n_frames = int((len(waveform_tensor) - frame_length) / hop_length) + 1
         
-        # 使用unfold进行批量计算（GPU加速）
+        # B1. 计算RMS能量 (用于VAD和音节核检测)
         if len(waveform_tensor) >= frame_length:
-            # 填充到可以整除hop_length
             pad_len = (n_frames - 1) * hop_length + frame_length - len(waveform_tensor)
             if pad_len > 0:
                 waveform_padded = F.pad(waveform_tensor, (0, pad_len))
             else:
                 waveform_padded = waveform_tensor
-            
-            # 使用unfold提取帧
             frames = waveform_padded.unfold(0, frame_length, hop_length)
-            # 计算每帧的RMS能量
             energy_tensor = torch.sqrt(torch.mean(frames ** 2, dim=1))
             energy = energy_tensor.cpu().numpy()
         else:
-            energy = np.array([torch.sqrt(torch.mean(waveform_tensor ** 2)).item()])
+            energy_tensor = torch.tensor([0.0], device=self.device)
+            energy = np.array([0.0])
+            
+        # 简单的VAD (基于能量阈值)
+        threshold = np.percentile(energy, 30) if len(energy) > 0 else 0
+        is_speech = energy > threshold
         
-        energy_diff = np.abs(np.diff(energy))
-        features['rhythm_irregularity'] = energy_diff
+        # B2. 检测音节核 (Syllable Nuclei) - 近似为能量局部峰值
+        # 使用 scipy.signal.find_peaks 找峰值
+        # 为了模拟"音节"，我们寻找能量包络的显著峰
+        peaks, _ = signal.find_peaks(energy, height=threshold, distance=max(1, int(0.1 * self.sample_rate / hop_length))) # 假设音节最小间隔100ms
         
-        # 2. 停顿检测（低能量区域）
-        if len(energy) > 0:
-            energy_min = energy.min()
-            energy_max = energy.max()
-            if energy_max > energy_min:
-                energy_normalized = (energy - energy_min) / (energy_max - energy_min)
-            else:
-                energy_normalized = np.ones_like(energy)
-            features['pause_likelihood'] = 1.0 - energy_normalized
+        # 创建音节脉冲序列
+        syllable_pulses = np.zeros_like(energy)
+        syllable_pulses[peaks] = 1.0
+        
+        # 窗口大小 (用于计算局部速率) - 例如 2秒
+        window_size_frames = int(2.0 * self.sample_rate / hop_length)
+        if window_size_frames < 1: window_size_frames = 1
+        window = np.ones(window_size_frames)
+        
+        # --- Feature 1: Low Speech Rate ---
+        # 局部语速：窗口内音节数 / 窗口时间
+        # 使用卷积计算滑动窗口内的音节总数
+        syllable_count_smooth = np.convolve(syllable_pulses, window, mode='same')
+        # 归一化为 "每秒音节数"
+        seconds_per_window = window_size_frames * hop_length / self.sample_rate
+        local_speech_rate = syllable_count_smooth / seconds_per_window
+        
+        # 并不是直接用 speech rate，而是 "low speech rate" 为病理特征
+        # 假设正常语速约为 4-5 Hz，AD显著下降。我们取反或使用高斯核衡量 "过低"
+        # 这里简单处理：越低越异常 (上限截断)
+        features['low_speech_rate'] = np.maximum(0, 4.0 - local_speech_rate) # 假设低于4Hz开始算慢
+        
+        # --- Feature 2: Low Articulation Rate ---
+        # 发音速率：窗口内音节数 / (窗口内发音时间)
+        speech_frames_smooth = np.convolve(is_speech.astype(float), window, mode='same')
+        # 避免除以零
+        articulation_time = speech_frames_smooth * hop_length / self.sample_rate
+        articulation_time[articulation_time < 0.1] = 0.1 # 防止除以极小值
+        
+        local_articulation_rate = syllable_count_smooth / articulation_time
+        # 同样，越低越异常
+        features['low_articulation_rate'] = np.maximum(0, 4.5 - local_articulation_rate) 
+        
+        # --- Feature 3: Short Speech Segments ---
+        # 连续话段时长。AD患者说话片段更短。
+        # 标记每个连续语音段及其长度
+        labeled_speech, num_features = signal.label(is_speech)
+        segment_lengths = np.zeros_like(energy)
+        
+        if num_features > 0:
+            # 获取每个片段的长度
+            for i in range(1, num_features + 1):
+                mask = (labeled_speech == i)
+                length_in_frames = np.sum(mask)
+                length_in_seconds = length_in_frames * hop_length / self.sample_rate
+                segment_lengths[mask] = length_in_seconds
+        
+        # 特征：时长越短越异常 (例如小于 2秒)
+        # 这是一个 "每帧" 的特征，属于短片段的帧会有高值
+        features['short_speech_segments'] = np.maximum(0, 1.5 - segment_lengths) * is_speech.astype(float)
+        
+        # --- Feature 4: High nPVI (Rhythm Variability) ---
+        # nPVI 计算相邻音节间隔的差异。需基于音节间隔 (Inter-Syllable Intervals, ISI)
+        # 这是一个稀疏特征（只在音节处定义），我们需要平滑它
+        peak_indices = peaks
+        npvi_local = np.zeros_like(energy)
+        
+        if len(peak_indices) > 1:
+             # 计算相邻音节间隔 (ISI)
+            isis = np.diff(peak_indices) * hop_length / self.sample_rate # 秒
+            
+            # 计算局部 PVI
+            # nPVI_k = 100 * |d_k - d_{k+1}| / ((d_k + d_{k+1})/2)
+            # 我们将其映射回每个音节位置
+            for i in range(len(isis) - 1):
+                d_k = isis[i]
+                d_next = isis[i+1]
+                mean_d = (d_k + d_next) / 2 + 1e-6
+                val = 100 * np.abs(d_k - d_next) / mean_d
+                # 将该值赋给对应的音节附近区域
+                start_idx = peak_indices[i]
+                end_idx = peak_indices[i+2]
+                npvi_local[start_idx:end_idx] = val / 100.0 # 归一化大概范围
+        
+        # 使用平滑填充
+        if len(npvi_local) > 0:
+             # 前向填充+平滑
+            features['high_npvi_rhythm'] = signal.savgol_filter(npvi_local, min(11, len(npvi_local)), 1)
         else:
-            features['pause_likelihood'] = np.array([])
+            features['high_npvi_rhythm'] = np.zeros_like(energy)
+
+        # --- Feature 5: Voice Breaks ---
+        # 声带中断/断裂：在发音段内，音调或能量突然中断
+        # 使用 pitch (F0) 或 倒谱峰值 (Cepstral Peak Prominence) 突变
+        # 这里简化使用频谱质心或能量的突降，且必须在 "is_speech" 内部
         
-        # 3. 音调特征（使用GPU频谱分析）- GPU
+        # 计算频谱平坦度 (Spectral Flatness) - GPU
+        # 较高的平坦度通常意味着噪音/无声/气声 (Voice Break 特征)
         with torch.no_grad():
-            # 计算Mel频谱
-            mel_spec = self.mel_transform(waveform_tensor.unsqueeze(0))
-            mel_spec = mel_spec.squeeze()
-            
-            # 计算频谱质心（GPU）
-            freqs = torch.linspace(0, self.sample_rate // 2, mel_spec.shape[-1]).to(self.device)
-            spectral_centroid = torch.sum(freqs.unsqueeze(0) * mel_spec, dim=-1) / (torch.sum(mel_spec, dim=-1) + 1e-8)
-            spectral_centroid = spectral_centroid.cpu().numpy()
-            
-            # 计算音调变化率（单调性：变化率低 = 单调）
-            if len(spectral_centroid) > 1:
-                pitch_variation = np.abs(np.diff(spectral_centroid))
-                # 填充到与energy相同长度
-                if len(pitch_variation) < len(energy):
-                    pitch_variation = np.pad(
-                        pitch_variation,
-                        (0, len(energy) - len(pitch_variation)),
-                        mode='edge'
-                    )
-                elif len(pitch_variation) > len(energy):
-                    pitch_variation = pitch_variation[:len(energy)]
-            else:
-                pitch_variation = np.zeros(len(energy))
-            
-            # 单调性：变化率低 = 病理特征
-            features['pitch_monotony'] = 1.0 / (1.0 + pitch_variation)
+             # 使用 Mel 谱图近似计算
+            mel_spec = self.mel_transform(waveform_tensor.unsqueeze(0)).squeeze()
+            # 几何平均 / 算术平均
+            gmean = torch.exp(torch.mean(torch.log(mel_spec + 1e-10), dim=0))
+            amean = torch.mean(mel_spec, dim=0) + 1e-10
+            flatness = (gmean / amean).cpu().numpy()
         
-        # 4. 能量下降（突然的能量下降）
-        if len(energy) >= 5:
-            from scipy import signal
-            energy_smooth = signal.savgol_filter(
-                energy,
-                window_length=min(5, len(energy)),
-                polyorder=min(2, len(energy)-1)
-            )
-            energy_gradient = np.gradient(energy_smooth)
-            features['energy_drop'] = np.maximum(0, -energy_gradient)
-        else:
-            features['energy_drop'] = np.zeros(len(energy))
+        # Voice Break: 在语音段内，平坦度突然升高 (变得像噪音)
+        # 或者能量突然下降但未归零
         
-        # 5. 音质特征（基于频谱特征，使用GPU计算的mel_spec）
-        # 频谱质心变化异常 = 音质问题
-        if len(spectral_centroid) > 1:
-            spec_variation = np.abs(np.diff(spectral_centroid))
-            spec_variation = np.pad(spec_variation, (0, 1), mode='edge')
-            if len(spec_variation) < len(energy):
-                spec_variation = np.pad(
-                    spec_variation,
-                    (0, len(energy) - len(spec_variation)),
-                    mode='edge'
-                )
-            elif len(spec_variation) > len(energy):
-                spec_variation = spec_variation[:len(energy)]
-        else:
-            spec_variation = np.zeros(len(energy))
-        features['voice_quality_anomaly'] = spec_variation
+        # 确保只要长度一致
+        if len(flatness) != len(energy):
+             # 简单的重采样或截断对齐
+             target_len = len(energy)
+             flatness = signal.resample(flatness, target_len)
+
+        # 定义 Voice Break：语音段内 + 高平坦度
+        voice_break_score = flatness * is_speech.astype(float)
         
-        # 6. 周期性特征（简化版，基于频谱稳定性）
-        # 计算频谱的周期性（使用自相关）
-        if mel_spec.shape[-1] > 10:
-            # 对频谱做时间维度的自相关
-            spec_mean = mel_spec.mean(dim=0).cpu().numpy()
-            if len(spec_mean) > 10:
-                autocorr = np.correlate(spec_mean, spec_mean, mode='full')
-                autocorr = autocorr[len(autocorr)//2:]
-                if len(autocorr) > 5:
-                    # 找到周期性峰值
-                    peaks = signal.find_peaks(autocorr[1:min(50, len(autocorr))], height=autocorr.max()*0.1)[0]
-                    if len(peaks) > 0:
-                        periodicity_score = 1.0 - min(1.0, peaks[0] / 50.0)
-                    else:
-                        periodicity_score = 0.5
-                else:
-                    periodicity_score = 0.5
-            else:
-                periodicity_score = 0.5
-        else:
-            periodicity_score = 0.5
-        
-        # 将周期性分数扩展到所有帧
-        features['voice_quality_periodicity'] = np.full(len(energy), periodicity_score)
+        # 平滑处理
+        features['voice_breaks'] = signal.medfilt(voice_break_score, kernel_size=3)
         
         return features
     
