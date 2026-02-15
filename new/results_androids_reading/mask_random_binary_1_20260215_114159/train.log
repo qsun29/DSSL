@@ -1,0 +1,52 @@
+Data root: /mnt/lv2/data/ad/Androids-Corpus
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_androids_reading/mask_random_binary_1_20260215_114159
+Mask strategy: random
+Split by subject: train=89 samples, val=23 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+LR schedule: cosine (total_steps=460, warmup=46)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6925, acc=0.5056
+VALIDATION | acc=0.4783
+New best val_acc=0.4783 at epoch 1, saved to /home/sunqi/pd/new/results_androids_reading/mask_random_binary_1_20260215_114159/best_model.pt
+Epoch 2 TRAIN | loss=0.6835, acc=0.6292
+VALIDATION | acc=0.6957
+New best val_acc=0.6957 at epoch 2, saved to /home/sunqi/pd/new/results_androids_reading/mask_random_binary_1_20260215_114159/best_model.pt
+Epoch 3 TRAIN | loss=0.6350, acc=0.6517
+VALIDATION | acc=0.6087
+Epoch 4 TRAIN | loss=0.7163, acc=0.5056
+VALIDATION | acc=0.6087
+Epoch 5 TRAIN | loss=0.7015, acc=0.5393
+VALIDATION | acc=0.6957
+Epoch 6 TRAIN | loss=0.6523, acc=0.6404
+VALIDATION | acc=0.6522
+Epoch 7 TRAIN | loss=0.6204, acc=0.7079
+VALIDATION | acc=0.6087
+Epoch 8 TRAIN | loss=0.5746, acc=0.7753
+VALIDATION | acc=0.5652
+Epoch 9 TRAIN | loss=0.5222, acc=0.7865
+VALIDATION | acc=0.5652
+Epoch 10 TRAIN | loss=0.4849, acc=0.7978
+VALIDATION | acc=0.5652
+Epoch 11 TRAIN | loss=0.4005, acc=0.8652
+VALIDATION | acc=0.5652
+Epoch 12 TRAIN | loss=0.4363, acc=0.8202
+VALIDATION | acc=0.5652
+Epoch 13 TRAIN | loss=0.2675, acc=0.9438
+VALIDATION | acc=0.5217
+Epoch 14 TRAIN | loss=0.3036, acc=0.8989
+VALIDATION | acc=0.5652
+Epoch 15 TRAIN | loss=0.2607, acc=0.9101
+VALIDATION | acc=0.5652
+Epoch 16 TRAIN | loss=0.2012, acc=0.9551
+VALIDATION | acc=0.5652
+Epoch 17 TRAIN | loss=0.2263, acc=0.9438
+VALIDATION | acc=0.5652
+Epoch 18 TRAIN | loss=0.1521, acc=0.9663
+VALIDATION | acc=0.5652
+Epoch 19 TRAIN | loss=0.0724, acc=0.9888
+VALIDATION | acc=0.5652
+Epoch 20 TRAIN | loss=0.1224, acc=0.9775
+VALIDATION | acc=0.5652
+Done. Best val_acc=0.6957
+Results saved under /home/sunqi/pd/new/results_androids_reading/mask_random_binary_1_20260215_114159

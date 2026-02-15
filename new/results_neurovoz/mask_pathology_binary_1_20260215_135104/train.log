@@ -1,0 +1,57 @@
+Data root: /mnt/lv3/sunqi/data
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104
+Mask strategy: pathology
+Split by subject: train=2306 samples, val=577 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+Pathology 端到端模式（方案A）：权重与阈值在 GPU 上联合训练
+LR schedule: cosine (total_steps=11540, warmup=1154)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN (e2e) | loss=0.6336, acc=0.6422
+VALIDATION (e2e) | acc=0.6776
+New best val_acc=0.6776 at epoch 1, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 2 TRAIN (e2e) | loss=0.5908, acc=0.7316
+VALIDATION (e2e) | acc=0.7730
+New best val_acc=0.7730 at epoch 2, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 3 TRAIN (e2e) | loss=0.5845, acc=0.7546
+VALIDATION (e2e) | acc=0.8076
+New best val_acc=0.8076 at epoch 3, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 4 TRAIN (e2e) | loss=0.5240, acc=0.8205
+VALIDATION (e2e) | acc=0.8250
+New best val_acc=0.8250 at epoch 4, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 5 TRAIN (e2e) | loss=0.4782, acc=0.8469
+VALIDATION (e2e) | acc=0.8631
+New best val_acc=0.8631 at epoch 5, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 6 TRAIN (e2e) | loss=0.4215, acc=0.8799
+VALIDATION (e2e) | acc=0.7626
+Epoch 7 TRAIN (e2e) | loss=0.3965, acc=0.8916
+VALIDATION (e2e) | acc=0.8596
+Epoch 8 TRAIN (e2e) | loss=0.3329, acc=0.9228
+VALIDATION (e2e) | acc=0.8527
+Epoch 9 TRAIN (e2e) | loss=0.3022, acc=0.9345
+VALIDATION (e2e) | acc=0.8977
+New best val_acc=0.8977 at epoch 9, saved to /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104/best_model.pt
+Epoch 10 TRAIN (e2e) | loss=0.2371, acc=0.9523
+VALIDATION (e2e) | acc=0.8631
+Epoch 11 TRAIN (e2e) | loss=0.1853, acc=0.9666
+VALIDATION (e2e) | acc=0.8735
+Epoch 12 TRAIN (e2e) | loss=0.1156, acc=0.9792
+VALIDATION (e2e) | acc=0.8977
+Epoch 13 TRAIN (e2e) | loss=0.1280, acc=0.9757
+VALIDATION (e2e) | acc=0.8873
+Epoch 14 TRAIN (e2e) | loss=0.0897, acc=0.9831
+VALIDATION (e2e) | acc=0.8943
+Epoch 15 TRAIN (e2e) | loss=0.0680, acc=0.9874
+VALIDATION (e2e) | acc=0.8908
+Epoch 16 TRAIN (e2e) | loss=0.0326, acc=0.9935
+VALIDATION (e2e) | acc=0.8839
+Epoch 17 TRAIN (e2e) | loss=0.0289, acc=0.9952
+VALIDATION (e2e) | acc=0.8804
+Epoch 18 TRAIN (e2e) | loss=0.0203, acc=0.9965
+VALIDATION (e2e) | acc=0.8891
+Epoch 19 TRAIN (e2e) | loss=0.0047, acc=0.9991
+VALIDATION (e2e) | acc=0.8891
+Epoch 20 TRAIN (e2e) | loss=0.0082, acc=0.9987
+VALIDATION (e2e) | acc=0.8873
+Done. Best val_acc=0.8977
+Results saved under /home/sunqi/pd/new/results_neurovoz/mask_pathology_binary_1_20260215_135104

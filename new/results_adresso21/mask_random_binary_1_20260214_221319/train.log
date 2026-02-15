@@ -1,0 +1,53 @@
+Data root: /mnt/lv2/data/ad/ADReSS/ADReSSo21
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_adresso21/mask_random_binary_1_20260214_221319
+Mask strategy: random
+Collected 166 samples from ADReSSo21 diagnosis train (cn=True, ad=True)
+Split by subject: train=132 samples, val=34 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+LR schedule: cosine (total_steps=660, warmup=66)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6949, acc=0.5000
+VALIDATION | acc=0.5294
+New best val_acc=0.5294 at epoch 1, saved to /home/sunqi/pd/new/results_adresso21/mask_random_binary_1_20260214_221319/best_model.pt
+Epoch 2 TRAIN | loss=0.6913, acc=0.5076
+VALIDATION | acc=0.6471
+New best val_acc=0.6471 at epoch 2, saved to /home/sunqi/pd/new/results_adresso21/mask_random_binary_1_20260214_221319/best_model.pt
+Epoch 3 TRAIN | loss=0.6853, acc=0.5227
+VALIDATION | acc=0.6176
+Epoch 4 TRAIN | loss=0.6592, acc=0.6212
+VALIDATION | acc=0.4412
+Epoch 5 TRAIN | loss=0.6966, acc=0.5227
+VALIDATION | acc=0.3824
+Epoch 6 TRAIN | loss=0.6920, acc=0.5833
+VALIDATION | acc=0.5000
+Epoch 7 TRAIN | loss=0.7006, acc=0.5379
+VALIDATION | acc=0.4706
+Epoch 8 TRAIN | loss=0.6940, acc=0.5455
+VALIDATION | acc=0.5294
+Epoch 9 TRAIN | loss=0.7083, acc=0.5076
+VALIDATION | acc=0.5294
+Epoch 10 TRAIN | loss=0.6945, acc=0.5455
+VALIDATION | acc=0.5294
+Epoch 11 TRAIN | loss=0.7014, acc=0.4848
+VALIDATION | acc=0.5882
+Epoch 12 TRAIN | loss=0.6970, acc=0.5152
+VALIDATION | acc=0.5000
+Epoch 13 TRAIN | loss=0.6866, acc=0.5303
+VALIDATION | acc=0.5294
+Epoch 14 TRAIN | loss=0.6748, acc=0.5909
+VALIDATION | acc=0.5588
+Epoch 15 TRAIN | loss=0.6946, acc=0.5000
+VALIDATION | acc=0.5882
+Epoch 16 TRAIN | loss=0.6820, acc=0.5833
+VALIDATION | acc=0.5588
+Epoch 17 TRAIN | loss=0.6694, acc=0.6212
+VALIDATION | acc=0.5294
+Epoch 18 TRAIN | loss=0.6400, acc=0.6970
+VALIDATION | acc=0.5294
+Epoch 19 TRAIN | loss=0.6675, acc=0.5530
+VALIDATION | acc=0.5294
+Epoch 20 TRAIN | loss=0.6472, acc=0.6439
+VALIDATION | acc=0.5294
+Done. Best val_acc=0.6471
+Results saved under /home/sunqi/pd/new/results_adresso21/mask_random_binary_1_20260214_221319

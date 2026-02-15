@@ -1,0 +1,58 @@
+Data root: /mnt/lv2/data/ad/ADReSS/ADReSSo21
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339
+Mask strategy: pathology
+Collected 166 samples from ADReSSo21 diagnosis train (cn=True, ad=True)
+Split by subject: train=132 samples, val=34 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+Pathology 端到端模式（方案A）：权重与阈值在 GPU 上联合训练
+LR schedule: cosine (total_steps=660, warmup=66)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN (e2e) | loss=0.6956, acc=0.4621
+VALIDATION (e2e) | acc=0.4706
+New best val_acc=0.4706 at epoch 1, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 2 TRAIN (e2e) | loss=0.6831, acc=0.6364
+VALIDATION (e2e) | acc=0.5294
+New best val_acc=0.5294 at epoch 2, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 3 TRAIN (e2e) | loss=0.6786, acc=0.6136
+VALIDATION (e2e) | acc=0.5588
+New best val_acc=0.5588 at epoch 3, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 4 TRAIN (e2e) | loss=0.6140, acc=0.7121
+VALIDATION (e2e) | acc=0.6176
+New best val_acc=0.6176 at epoch 4, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 5 TRAIN (e2e) | loss=0.5383, acc=0.7879
+VALIDATION (e2e) | acc=0.6765
+New best val_acc=0.6765 at epoch 5, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 6 TRAIN (e2e) | loss=0.6147, acc=0.7045
+VALIDATION (e2e) | acc=0.5882
+Epoch 7 TRAIN (e2e) | loss=0.6592, acc=0.6288
+VALIDATION (e2e) | acc=0.6765
+Epoch 8 TRAIN (e2e) | loss=0.5650, acc=0.7273
+VALIDATION (e2e) | acc=0.6176
+Epoch 9 TRAIN (e2e) | loss=0.4382, acc=0.8409
+VALIDATION (e2e) | acc=0.6765
+Epoch 10 TRAIN (e2e) | loss=0.3486, acc=0.8712
+VALIDATION (e2e) | acc=0.7059
+New best val_acc=0.7059 at epoch 10, saved to /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339/best_model.pt
+Epoch 11 TRAIN (e2e) | loss=0.3036, acc=0.9242
+VALIDATION (e2e) | acc=0.7059
+Epoch 12 TRAIN (e2e) | loss=0.2285, acc=0.9394
+VALIDATION (e2e) | acc=0.6765
+Epoch 13 TRAIN (e2e) | loss=0.2052, acc=0.9394
+VALIDATION (e2e) | acc=0.6765
+Epoch 14 TRAIN (e2e) | loss=0.1400, acc=0.9545
+VALIDATION (e2e) | acc=0.6765
+Epoch 15 TRAIN (e2e) | loss=0.1497, acc=0.9697
+VALIDATION (e2e) | acc=0.7059
+Epoch 16 TRAIN (e2e) | loss=0.1133, acc=0.9697
+VALIDATION (e2e) | acc=0.6765
+Epoch 17 TRAIN (e2e) | loss=0.1349, acc=0.9773
+VALIDATION (e2e) | acc=0.6765
+Epoch 18 TRAIN (e2e) | loss=0.1560, acc=0.9621
+VALIDATION (e2e) | acc=0.6471
+Epoch 19 TRAIN (e2e) | loss=0.2293, acc=0.9470
+VALIDATION (e2e) | acc=0.6765
+Epoch 20 TRAIN (e2e) | loss=0.1621, acc=0.9621
+VALIDATION (e2e) | acc=0.6471
+Done. Best val_acc=0.7059
+Results saved under /home/sunqi/pd/new/results_adresso21/mask_pathology_binary_1_20260214_213339

@@ -1,0 +1,8 @@
+Data root: /mnt/lv3/sunqi/data
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530
+Mask strategy: random
+Split by subject: train=2306 samples, val=577 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+LR schedule: cosine (total_steps=11540, warmup=1154)
+Training with AMP (autocast + GradScaler)

@@ -1,0 +1,453 @@
+"""
+用 Optuna 搜索病理特征组合的最优权重：以验证集分类准确率为目标，
+在 6 维权重空间上做贝叶斯优化（TPE 采样 + 中位数剪枝），找到使下游 AD vs HC 表现最好的权重。
+
+前沿设置：TPESampler(multivariate=True)、MedianPruner 早停、AMP 混合精度。
+
+用法示例：
+  cd /home/sunqi/pd/new
+  python search_pathology_weights.py --data_root /mnt/lv2/data/ad/NCMMSC2021_AD \\
+    --output_dir ./results_weight_search_NC --n_trials 30 --epochs_per_trial 5 --use_amp
+
+结果：--output_dir 下会生成 best_weights.json、best_logits.pt、optuna_study.db（可复现/可视化）。
+"""
+
+import json
+import logging
+import random
+import sys
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+# 保证可导入 new 与实验脚本
+NEW_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = NEW_DIR.parent
+for _d in (NEW_DIR, PROJECT_ROOT):
+    if str(_d) not in sys.path:
+        sys.path.insert(0, str(_d))
+
+import optuna
+from transformers import WavLMForSequenceClassification, Wav2Vec2FeatureExtractor
+
+from gpu_pathology_detector import (
+    GPUPathologyFeatureDetector,
+    FEATURE_NAMES,
+)
+from gpu_adaptive_masker import GPUAdaptivePathologyMasker
+from NCMMSC2021_AD_experiment.intelligent_masked_dataset import split_by_subject
+
+from train_sample_collectors import (
+    collect_adress_train_samples,
+    collect_long_train_samples,
+)
+from long_wavlm_disease_mask_experiment import (
+    LongWavLMDataset,
+    train_one_epoch,
+    evaluate,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
+
+
+def _get_train_val_samples(data_root: str, binary: bool = True):
+    """与 long_wavlm_disease_mask_experiment 一致的样本收集与划分。"""
+    data_root = Path(data_root)
+    if (data_root / "ADReSS-IS2020-data").exists():
+        raw = collect_adress_train_samples(str(data_root))
+        num_labels = 2
+    else:
+        raw = collect_long_train_samples(str(data_root), binary=binary)
+        num_labels = 2 if binary else 3
+    train_samples, val_samples = split_by_subject(
+        raw, train_ratio=0.8, seed=42
+    )
+    return train_samples, val_samples, num_labels
+
+
+def run_trial(
+    weight_logits: torch.Tensor,
+    train_samples,
+    val_samples,
+    num_labels: int,
+    model_path: str,
+    device: torch.device,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    max_duration_s: float,
+    pathology_threshold: float,
+    mask_prob: float,
+    pathology_ratio: float,
+    aug_prob: float,
+    use_amp: bool = True,
+    trial: "optuna.Trial | None" = None,
+    trial_index: int = 0,
+    run_seed: Optional[int] = None,
+) -> float:
+    """
+    用给定权重 logits 的 detector 做 pathology 掩码，训练 WavLM 分类器 epochs 轮，返回最佳验证准确率。
+    若传入 trial，则每 epoch 上报中间值并支持 Optuna 剪枝（早停表现差的 trial）。
+    run_seed 非 None 时在每次 trial 内固定随机种子，便于复现。
+    """
+    if run_seed is not None:
+        seed_here = run_seed + trial_index
+        torch.manual_seed(seed_here)
+        np.random.seed(seed_here)
+        random.seed(seed_here)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed_here)
+        g = torch.Generator()
+        g.manual_seed(seed_here)
+    else:
+        g = None
+
+    detector = GPUPathologyFeatureDetector(
+        sample_rate=16000,
+        threshold_percentile=pathology_threshold,
+        device=device,
+        init_weight_logits=weight_logits.to(device),
+    )
+    masker = GPUAdaptivePathologyMasker(
+        detector=detector,
+        mask_prob=mask_prob,
+        pathology_ratio=pathology_ratio,
+        random_ratio=max(0.0, 1.0 - pathology_ratio),
+    )
+    train_ds = LongWavLMDataset(
+        train_samples,
+        model_name_or_path=model_path,
+        mask_strategy="pathology",
+        masker=masker,
+        max_duration_s=max_duration_s,
+        aug_prob=aug_prob,
+    )
+    val_ds = LongWavLMDataset(
+        val_samples,
+        model_name_or_path=model_path,
+        mask_strategy="none",
+        masker=None,
+        max_duration_s=max_duration_s,
+        aug_prob=1.0,
+    )
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=0,
+        generator=g,
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False, num_workers=0
+    )
+
+    model = WavLMForSequenceClassification.from_pretrained(
+        model_path,
+        num_labels=num_labels,
+        problem_type="single_label_classification",
+    )
+    model = model.to(device)
+    use_amp = use_amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda") if use_amp else None
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    criterion = nn.CrossEntropyLoss()
+
+    best_val_acc = 0.0
+    for epoch in range(1, epochs + 1):
+        train_one_epoch(
+            model,
+            train_loader,
+            optimizer,
+            device,
+            criterion,
+            epoch,
+            use_amp=use_amp,
+            scaler=scaler,
+            gradient_accumulation_steps=1,
+            scheduler=None,
+        )
+        val_acc = evaluate(model, val_loader, device, use_amp=use_amp)
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+
+        if trial is not None:
+            trial.report(val_acc, step=epoch)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+    return best_val_acc
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Optuna 搜索病理特征组合权重（目标：验证集分类准确率）"
+    )
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="/mnt/lv2/data/ad/NCMMSC2021_AD",
+        help="数据根目录（ADReSS 或 NCMMSC）",
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        default="/home/sunqi/models/wavlm-base",
+        help="WavLM 模型路径",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=str(NEW_DIR / "results_pathology_weight_search"),
+        help="保存 best_weights.json、best_logits.pt 的目录",
+    )
+    parser.add_argument(
+        "--n_trials",
+        type=int,
+        default=30,
+        help="Optuna 试验次数",
+    )
+    parser.add_argument(
+        "--epochs_per_trial",
+        type=int,
+        default=5,
+        help="每次试验的训练轮数（少则快但噪声大）",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=2e-5,
+    )
+    parser.add_argument(
+        "--max_duration_s",
+        type=float,
+        default=10.0,
+    )
+    parser.add_argument(
+        "--pathology_threshold",
+        type=float,
+        default=85.0,
+    )
+    parser.add_argument(
+        "--mask_prob",
+        type=float,
+        default=0.40,
+    )
+    parser.add_argument(
+        "--pathology_ratio",
+        type=float,
+        default=0.9,
+    )
+    parser.add_argument(
+        "--aug_prob",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--binary",
+        action="store_true",
+        default=True,
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="随机种子；与 n_runs 配合时每次运行使用 seed+run_idx",
+    )
+    parser.add_argument(
+        "--n_runs",
+        type=int,
+        default=3,
+        help="重复运行 Optuna 搜索的次数，取验证准确率最高的一次作为最终输出（默认 3 以稳定结果）",
+    )
+    parser.add_argument(
+        "--use_amp",
+        action="store_true",
+        default=True,
+        help="训练时使用混合精度 (AMP)",
+    )
+    parser.add_argument(
+        "--no_amp",
+        action="store_false",
+        dest="use_amp",
+    )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        default=True,
+        help="使用 MedianPruner 早停表现差的 trial",
+    )
+    parser.add_argument(
+        "--no_prune",
+        action="store_false",
+        dest="prune",
+    )
+    parser.add_argument(
+        "--study_storage",
+        type=str,
+        default=None,
+        help="Optuna 数据库路径（如 optuna_study.db），用于持久化与复现",
+    )
+    args = parser.parse_args()
+
+    device = torch.device(args.device)
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Loading data and splitting by subject...")
+    train_samples, val_samples, num_labels = _get_train_val_samples(
+        args.data_root, binary=args.binary
+    )
+    logger.info(
+        f"Train={len(train_samples)}, Val={len(val_samples)}, num_labels={num_labels}"
+    )
+
+    # 全局种子：数据划分等复现（每次 n_runs 内 run_idx 固定则划分一致）
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
+    def make_objective(run_seed: int):
+        def objective(trial: optuna.Trial) -> float:
+            logits = [
+                trial.suggest_float(f"logit_{i}", -2.0, 2.0)
+                for i in range(len(FEATURE_NAMES))
+            ]
+            weight_logits = torch.tensor(logits, dtype=torch.float32)
+            return run_trial(
+                weight_logits,
+                train_samples,
+                val_samples,
+                num_labels,
+                model_path=args.model_name_or_path,
+                device=device,
+                epochs=args.epochs_per_trial,
+                batch_size=args.batch_size,
+                lr=args.lr,
+                max_duration_s=args.max_duration_s,
+                pathology_threshold=args.pathology_threshold,
+                mask_prob=args.mask_prob,
+                pathology_ratio=args.pathology_ratio,
+                aug_prob=args.aug_prob,
+                use_amp=args.use_amp,
+                trial=trial if args.prune else None,
+                trial_index=trial.number if trial is not None else 0,
+                run_seed=run_seed,
+            )
+        return objective
+
+    # 多次运行取最优一次，以稳定输出
+    runs_best_value = []
+    runs_best_params = []
+
+    for run_idx in range(args.n_runs):
+        run_seed = args.seed + run_idx
+        logger.info(
+            f"Optuna run {run_idx + 1}/{args.n_runs} (seed={run_seed})"
+        )
+        sampler = optuna.samplers.TPESampler(
+            n_startup_trials=min(10, args.n_trials),
+            multivariate=True,
+            seed=run_seed,
+        )
+        pruner = (
+            optuna.pruners.MedianPruner(
+                n_startup_trials=5,
+                n_warmup_steps=2,
+            )
+            if args.prune
+            else optuna.pruners.NopPruner()
+        )
+        study_kw = dict(direction="maximize", sampler=sampler, pruner=pruner)
+        if args.study_storage and args.n_runs == 1:
+            study_kw["storage"] = f"sqlite:///{Path(args.study_storage).resolve()}"
+            study_kw["study_name"] = "pathology_weight_search"
+            study_kw["load_if_exists"] = True
+        study = optuna.create_study(**study_kw)
+        study.optimize(
+            make_objective(run_seed),
+            n_trials=args.n_trials,
+            show_progress_bar=True,
+        )
+        runs_best_value.append(study.best_value)
+        runs_best_params.append(study.best_params)
+
+    # 取验证准确率最高的一次作为最终输出
+    best_run_idx = int(np.argmax(runs_best_value))
+    best_params = runs_best_params[best_run_idx]
+    best_value = runs_best_value[best_run_idx]
+
+    best_logits = torch.tensor(
+        [best_params[f"logit_{i}"] for i in range(len(FEATURE_NAMES))],
+        dtype=torch.float32,
+    )
+    best_weights = torch.softmax(best_logits, dim=0).tolist()
+    weights_dict = dict(zip(FEATURE_NAMES, best_weights))
+
+    out_weights = out_dir / "best_weights.json"
+    with open(out_weights, "w", encoding="utf-8") as f:
+        json.dump(weights_dict, f, indent=2, ensure_ascii=False)
+    out_logits = out_dir / "best_logits.pt"
+    torch.save({"weight_logits": best_logits}, out_logits)
+
+    # 保存多轮汇总，便于检查稳定性
+    summary = {
+        "n_runs": args.n_runs,
+        "seed_base": args.seed,
+        "best_run_idx": best_run_idx,
+        "best_run_seed": args.seed + best_run_idx,
+        "best_val_acc": best_value,
+        "all_runs_val_acc": [float(v) for v in runs_best_value],
+    }
+    out_summary = out_dir / "n_runs_summary.json"
+    with open(out_summary, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    logger.info(
+        f"Best run: {best_run_idx + 1}/{args.n_runs} (seed={args.seed + best_run_idx}), "
+        f"val_acc={best_value:.4f}"
+    )
+    logger.info(f"All runs val_acc: {[f'{v:.4f}' for v in runs_best_value]}")
+    logger.info(f"Best weights: {weights_dict}")
+    logger.info(f"Saved to {out_weights}, {out_logits}, {out_summary}")
+
+    # 使用方式提示
+    logger.info(
+        "在实验中使用该权重：用 init_weight_logits=torch.load('best_logits.pt')['weight_logits'] 初始化 GPUPathologyFeatureDetector"
+    )
+
+
+if __name__ == "__main__":
+    main()
+est validation accuracy: {study.best_value:.4f}")
+    logger.info(f"Best weights: {weights_dict}")
+    logger.info(f"Saved to {out_weights} and {out_logits}")
+
+    # 使用方式提示
+    logger.info(
+        "在实验中使用该权重：用 init_weight_logits=torch.load('best_logits.pt')['weight_logits'] 初始化 GPUPathologyFeatureDetector"
+    )
+
+
+if __name__ == "__main__":
+    main()

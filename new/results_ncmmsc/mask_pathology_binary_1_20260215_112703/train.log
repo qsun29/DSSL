@@ -1,0 +1,56 @@
+Data root: /mnt/lv2/data/ad/NCMMSC2021_AD
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703
+Mask strategy: pathology
+Collected 187 samples from NCMMSC long/train
+Split by subject: train=157 samples, val=30 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+Pathology 端到端模式（方案A）：权重与阈值在 GPU 上联合训练
+LR schedule: cosine (total_steps=800, warmup=80)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN (e2e) | loss=0.6901, acc=0.5860
+VALIDATION (e2e) | acc=0.8333
+New best val_acc=0.8333 at epoch 1, saved to /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703/best_model.pt
+Epoch 2 TRAIN (e2e) | loss=0.6153, acc=0.8344
+VALIDATION (e2e) | acc=0.8333
+Epoch 3 TRAIN (e2e) | loss=0.3321, acc=0.9045
+VALIDATION (e2e) | acc=0.8333
+Epoch 4 TRAIN (e2e) | loss=0.2125, acc=0.9363
+VALIDATION (e2e) | acc=0.9000
+New best val_acc=0.9000 at epoch 4, saved to /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703/best_model.pt
+Epoch 5 TRAIN (e2e) | loss=0.0916, acc=0.9745
+VALIDATION (e2e) | acc=0.9000
+Epoch 6 TRAIN (e2e) | loss=0.0256, acc=1.0000
+VALIDATION (e2e) | acc=0.9000
+Epoch 7 TRAIN (e2e) | loss=0.0317, acc=0.9936
+VALIDATION (e2e) | acc=0.9333
+New best val_acc=0.9333 at epoch 7, saved to /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703/best_model.pt
+Epoch 8 TRAIN (e2e) | loss=0.0388, acc=0.9936
+VALIDATION (e2e) | acc=0.9333
+Epoch 9 TRAIN (e2e) | loss=0.0088, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 10 TRAIN (e2e) | loss=0.0149, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 11 TRAIN (e2e) | loss=0.0090, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 12 TRAIN (e2e) | loss=0.0038, acc=1.0000
+VALIDATION (e2e) | acc=0.9667
+New best val_acc=0.9667 at epoch 12, saved to /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703/best_model.pt
+Epoch 13 TRAIN (e2e) | loss=0.0086, acc=0.9936
+VALIDATION (e2e) | acc=0.9000
+Epoch 14 TRAIN (e2e) | loss=0.0033, acc=1.0000
+VALIDATION (e2e) | acc=0.9000
+Epoch 15 TRAIN (e2e) | loss=0.0029, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 16 TRAIN (e2e) | loss=0.0044, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 17 TRAIN (e2e) | loss=0.0071, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 18 TRAIN (e2e) | loss=0.0201, acc=0.9936
+VALIDATION (e2e) | acc=0.9333
+Epoch 19 TRAIN (e2e) | loss=0.0054, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Epoch 20 TRAIN (e2e) | loss=0.0045, acc=1.0000
+VALIDATION (e2e) | acc=0.9333
+Done. Best val_acc=0.9667
+Results saved under /home/sunqi/pd/new/results_ncmmsc_2/mask_pathology_binary_1_20260215_112703

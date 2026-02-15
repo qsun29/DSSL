@@ -1,0 +1,54 @@
+Data root: /mnt/lv2/data/ad/Androids-Corpus
+Model: /home/sunqi/models/wavlm-base
+Output dir: /home/sunqi/pd/new/results_androids_reading/mask_pathology_binary_1_20260215_113552
+Mask strategy: pathology
+Split by subject: train=89 samples, val=23 samples
+Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
+Pathology 端到端模式（方案A）：权重与阈值在 GPU 上联合训练
+LR schedule: cosine (total_steps=460, warmup=46)
+Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN (e2e) | loss=0.6910, acc=0.5169
+VALIDATION (e2e) | acc=0.5217
+New best val_acc=0.5217 at epoch 1, saved to /home/sunqi/pd/new/results_androids_reading/mask_pathology_binary_1_20260215_113552/best_model.pt
+Epoch 2 TRAIN (e2e) | loss=0.6788, acc=0.5506
+VALIDATION (e2e) | acc=0.7391
+New best val_acc=0.7391 at epoch 2, saved to /home/sunqi/pd/new/results_androids_reading/mask_pathology_binary_1_20260215_113552/best_model.pt
+Epoch 3 TRAIN (e2e) | loss=0.5790, acc=0.8539
+VALIDATION (e2e) | acc=0.6957
+Epoch 4 TRAIN (e2e) | loss=0.3518, acc=0.9326
+VALIDATION (e2e) | acc=0.7391
+Epoch 5 TRAIN (e2e) | loss=0.2452, acc=0.9438
+VALIDATION (e2e) | acc=0.7826
+New best val_acc=0.7826 at epoch 5, saved to /home/sunqi/pd/new/results_androids_reading/mask_pathology_binary_1_20260215_113552/best_model.pt
+Epoch 6 TRAIN (e2e) | loss=0.1649, acc=0.9551
+VALIDATION (e2e) | acc=0.7826
+Epoch 7 TRAIN (e2e) | loss=0.1533, acc=0.9663
+VALIDATION (e2e) | acc=0.7826
+Epoch 8 TRAIN (e2e) | loss=0.0610, acc=0.9888
+VALIDATION (e2e) | acc=0.7391
+Epoch 9 TRAIN (e2e) | loss=0.0310, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Epoch 10 TRAIN (e2e) | loss=0.2132, acc=0.9551
+VALIDATION (e2e) | acc=0.6957
+Epoch 11 TRAIN (e2e) | loss=0.0840, acc=0.9888
+VALIDATION (e2e) | acc=0.7826
+Epoch 12 TRAIN (e2e) | loss=0.0718, acc=0.9888
+VALIDATION (e2e) | acc=0.7826
+Epoch 13 TRAIN (e2e) | loss=0.0226, acc=0.9888
+VALIDATION (e2e) | acc=0.7826
+Epoch 14 TRAIN (e2e) | loss=0.0357, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Epoch 15 TRAIN (e2e) | loss=0.0636, acc=0.9888
+VALIDATION (e2e) | acc=0.7391
+Epoch 16 TRAIN (e2e) | loss=0.0139, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Epoch 17 TRAIN (e2e) | loss=0.0296, acc=0.9888
+VALIDATION (e2e) | acc=0.7826
+Epoch 18 TRAIN (e2e) | loss=0.0123, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Epoch 19 TRAIN (e2e) | loss=0.0170, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Epoch 20 TRAIN (e2e) | loss=0.0148, acc=1.0000
+VALIDATION (e2e) | acc=0.7826
+Done. Best val_acc=0.7826
+Results saved under /home/sunqi/pd/new/results_androids_reading/mask_pathology_binary_1_20260215_113552
