@@ -6,3 +6,51 @@ Split by subject: train=2306 samples, val=577 samples
 Using masker: mask_prob=0.4, pathology_ratio=0.9, pathology_threshold=85.0, aug_prob=1.0
 LR schedule: cosine (total_steps=11540, warmup=1154)
 Training with AMP (autocast + GradScaler)
+Epoch 1 TRAIN | loss=0.6647, acc=0.6097
+VALIDATION | acc=0.6291
+New best val_acc=0.6291 at epoch 1, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 2 TRAIN | loss=0.6218, acc=0.6648
+VALIDATION | acc=0.7262
+New best val_acc=0.7262 at epoch 2, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 3 TRAIN | loss=0.5804, acc=0.7151
+VALIDATION | acc=0.6984
+Epoch 4 TRAIN | loss=0.5457, acc=0.7624
+VALIDATION | acc=0.7262
+Epoch 5 TRAIN | loss=0.5027, acc=0.8049
+VALIDATION | acc=0.7868
+New best val_acc=0.7868 at epoch 5, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 6 TRAIN | loss=0.4821, acc=0.8235
+VALIDATION | acc=0.7504
+Epoch 7 TRAIN | loss=0.4527, acc=0.8487
+VALIDATION | acc=0.7435
+Epoch 8 TRAIN | loss=0.4274, acc=0.8721
+VALIDATION | acc=0.7955
+New best val_acc=0.7955 at epoch 8, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 9 TRAIN | loss=0.4433, acc=0.8656
+VALIDATION | acc=0.7903
+Epoch 10 TRAIN | loss=0.3427, acc=0.8972
+VALIDATION | acc=0.7955
+Epoch 11 TRAIN | loss=0.3460, acc=0.9050
+VALIDATION | acc=0.8007
+New best val_acc=0.8007 at epoch 11, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 12 TRAIN | loss=0.3156, acc=0.9159
+VALIDATION | acc=0.7920
+Epoch 13 TRAIN | loss=0.2405, acc=0.9441
+VALIDATION | acc=0.7990
+Epoch 14 TRAIN | loss=0.2200, acc=0.9467
+VALIDATION | acc=0.7972
+Epoch 15 TRAIN | loss=0.1715, acc=0.9614
+VALIDATION | acc=0.8146
+New best val_acc=0.8146 at epoch 15, saved to /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530/best_model.pt
+Epoch 16 TRAIN | loss=0.1608, acc=0.9631
+VALIDATION | acc=0.8007
+Epoch 17 TRAIN | loss=0.1489, acc=0.9683
+VALIDATION | acc=0.8146
+Epoch 18 TRAIN | loss=0.1115, acc=0.9761
+VALIDATION | acc=0.7990
+Epoch 19 TRAIN | loss=0.1080, acc=0.9748
+VALIDATION | acc=0.7990
+Epoch 20 TRAIN | loss=0.1000, acc=0.9792
+VALIDATION | acc=0.8042
+Done. Best val_acc=0.8146
+Results saved under /home/sunqi/pd/new/results_neurovoz/mask_random_binary_1_20260215_220530

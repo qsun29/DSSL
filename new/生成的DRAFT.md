@@ -10,7 +10,7 @@
 *Pathology-Aware Frame-Level Masking with End-to-End Learnable Weights for Binary Speech Classification*
 
 **Abstract (English, ~180 words):**  
-We propose a pathology-aware masking strategy for binary speech classification (e.g., AD vs. HC, depression vs. control): a GPU-based detector extracts six interpretable acoustic features (rhythm irregularity, pause likelihood, pitch monotony, energy drop, voice-quality anomaly, periodicity) and combines them with **end-to-end learnable frame-level attention**. We compare **pathology-aware masking** (mask detected pathology frames; detector and classifier trained jointly) with **random time masking** (control) using a WavLM-based classifier. The pipeline supports multiple datasets via a unified data loader: ADReSS, ADReSSo21, NCMMSC2021 AD, ADReSS-M, Androids-Corpus Reading-Task, and E-DAIC. On AD corpora (ADReSS, ADReSSo21, NCMMSC, ADReSS-M), pathology-aware masking consistently outperforms random masking; on Androids-Corpus (depression), pathology also outperforms random. Results show that targeting pathology for masking preserves more discriminative structure than random masking. We release the code structure, data collectors, and run scripts in `new/` for full reproducibility.
+We propose a pathology-aware masking strategy for binary speech classification (e.g., AD vs. HC, PD vs. HC, depression vs. control): a GPU-based detector extracts six interpretable acoustic features (rhythm irregularity, pause likelihood, pitch monotony, energy drop, voice-quality anomaly, periodicity) and combines them with **end-to-end learnable frame-level attention**. We compare **pathology-aware masking** (mask detected pathology frames; detector and classifier trained jointly) with **random time masking** (control) using a WavLM-based classifier. The pipeline supports multiple datasets via a unified data loader: ADReSS, ADReSSo21, NCMMSC2021 AD, ADReSS-M, Androids-Corpus Reading-Task, NeuroVoz (Parkinson’s), and E-DAIC. On AD corpora (ADReSS, ADReSSo21, NCMMSC, ADReSS-M), pathology-aware masking consistently outperforms random masking; on Androids-Corpus (depression) and NeuroVoz (PD vs. HC), pathology also outperforms random. Results show that targeting pathology for masking preserves more discriminative structure than random masking. We release the code structure, data collectors, and run scripts in `new/` for full reproducibility.
 
 ---
 
@@ -64,6 +64,7 @@ We propose a pathology-aware masking strategy for binary speech classification (
 | **E-DAIC** | `labels/train_split.csv` + `data` | PHQ_Binary → 抑郁(0)/非抑郁(1) |
 | **ADReSS-M** | `train` + `training-groundtruth.csv` | dx: Control(1), ProbableAD(0)，mp3 |
 | **Androids-Corpus** | `Reading-Task/audio/HC` 或 `PT` | HC(1), PT(0)，Reading-Task 朗读任务 |
+| **NeuroVoz** | `audios` + `metadata/metadata_hc.csv` | PD(0) vs. HC(1)，按文件划分 train/val |
 | **NCMMSC2021 AD** | 否则走 long | `AD_dataset_long/train/{AD,HC[,MCI]}`，binary 时 AD=0, HC=1 |
 
 说话人 ID 由 `NCMMSC2021_AD_experiment.intelligent_masked_dataset.get_subject_id` 从路径解析（ADReSS/NCMMSC 等用文件名约定），再经 `split_by_subject(samples, train_ratio=0.8, seed=42)` 划分。
@@ -77,6 +78,7 @@ We propose a pathology-aware masking strategy for binary speech classification (
 | NCMMSC2021 AD | `run_NCMMSC_three_experiments.sh` | `results_ncmmsc_auto` / `results_ncmmsc` |
 | ADReSS-M | `run_ADReSS-M_experiments.sh` | `results_adressm` |
 | Androids-Corpus Reading | `run_Androids_Reading_experiments.sh` | `results_androids_reading` |
+| NeuroVoz (PD vs. HC) | `run_NeuroVoz_experiments.sh` | `results_neurovoz` |
 
 每个脚本默认依次运行 **pathology** 与 **random** 两种策略。  
 可选：对 NCMMSC 先运行 `search_pathology_weights.py`（Optuna）得到 `best_logits.pt`，再在 pathology 时通过 `--pathology_weight_logits` 加载；当前主流程为**端到端**，不依赖预搜权重。
@@ -94,6 +96,7 @@ We propose a pathology-aware masking strategy for binary speech classification (
 | NCMMSC2021 AD | 157 / 30 | **96.67** | 76.67 |
 | ADReSS-M | 189 / 48 | **70.83** | ~56.25 |
 | Androids-Corpus Reading | 89 / 23 | **78.26** | 69.57 |
+| NeuroVoz (PD vs. HC) | 2306 / 577 | **89.77** | 81.46 |
 
 Pathology 在所有数据集上均优于 random，说明按病理位置掩码比随机掩码保留更多对分类有用的结构。
 
@@ -138,7 +141,7 @@ new/
 
 ## 9. 结论（英文，供 Abstract/Conclusion）
 
-We proposed a pathology-aware frame-level masking strategy with end-to-end learnable feature weighting (frame-level attention) for binary speech classification. The same pipeline was evaluated on AD (ADReSS, ADReSSo21, NCMMSC2021, ADReSS-M) and depression (Androids-Corpus Reading-Task) datasets. Pathology-aware masking consistently outperformed random masking across all corpora, demonstrating that targeting pathology for masking preserves more discriminative structure than random masking. The unified data loaders and run scripts in `new/` support full reproducibility for Interspeech 2026 submission and future extensions.
+We proposed a pathology-aware frame-level masking strategy with end-to-end learnable feature weighting (frame-level attention) for binary speech classification. The same pipeline was evaluated on AD (ADReSS, ADReSSo21, NCMMSC2021, ADReSS-M), depression (Androids-Corpus Reading-Task), and Parkinson’s (NeuroVoz) datasets. Pathology-aware masking consistently outperformed random masking across all corpora, demonstrating that targeting pathology for masking preserves more discriminative structure than random masking. The unified data loaders and run scripts in `new/` support full reproducibility for Interspeech 2026 submission and future extensions.
 
 ---
 
